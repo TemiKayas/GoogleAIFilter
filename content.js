@@ -70,6 +70,22 @@ const DEFAULT_PREFS = {
   isPaid: false
 };
 
+// Global state to prevent race conditions
+let currentState = { ...DEFAULT_PREFS };
+
+// Debounce utility
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 // Check if an element is safe to hide (not part of header/nav)
 function isSafeToHide(element) {
   const forbiddenSelectors = [
@@ -225,33 +241,84 @@ function findAIOverviewContainer() {
 }
 
 // Hide an element
-function hideElement(element) {
+function hideElement(element, type = 'generic') {
   if (!element || element.dataset.gscHidden === 'true') return;
 
   if (!isSafeToHide(element)) {
     return;
   }
 
+  // Mark as processed
   element.dataset.gscHidden = 'true';
-  element.style.display = 'none';
+
+  // Special handling for AI Overview - Add "Show" button
+  if (type === 'ai') {
+    // Create wrapper for the button to ensure it doesn't mess up layout
+    const buttonId = 'gsc-show-ai-btn-' + Math.random().toString(36).substr(2, 9);
+    
+    const btn = document.createElement('button');
+    btn.id = buttonId;
+    btn.className = 'gsc-show-ai-btn';
+    btn.innerText = '✨ Show AI Overview';
+    btn.style.cssText = `
+      display: block;
+      margin: 10px 0;
+      padding: 8px 16px;
+      background: #f1f3f4;
+      border: 1px solid #dadce0;
+      border-radius: 18px;
+      color: #1a73e8;
+      font-family: Google Sans, Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      z-index: 999;
+    `;
+
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Unhide the element
+      element.style.display = '';
+      element.dataset.gscHidden = 'user-shown'; // distinct state so we don't re-hide immediately
+      btn.remove();
+    };
+
+    // Insert button before the element
+    if (element.parentNode) {
+      element.parentNode.insertBefore(btn, element);
+    }
+    
+    // Hide the element
+    element.style.setProperty('display', 'none', 'important');
+  } else {
+    // Standard hiding for other elements
+    element.style.setProperty('display', 'none', 'important');
+  }
 }
 
-// Main cleaning function
-function cleanSearch(prefs) {
+// Main cleaning function - uses global currentState
+function cleanSearch() {
+  const prefs = currentState;
+  
+  if (!prefs.isPaid) return;
+
   // AI Overview
   if (prefs.hideAI) {
-    // First try direct selectors
+    // Collect ALL potential AI elements
     let aiElements = findElements(SELECTORS.aiOverview);
-
-    // If no elements found, try the text-based search
-    if (aiElements.length === 0) {
-      const aiContainer = findAIOverviewContainer();
-      if (aiContainer) {
-        aiElements = [aiContainer];
-      }
+    
+    // Always try to find the container via heuristics too, 
+    // as direct selectors often miss the parent wrapper
+    const aiContainer = findAIOverviewContainer();
+    if (aiContainer && !aiElements.includes(aiContainer)) {
+      aiElements.push(aiContainer);
     }
 
-    aiElements.forEach(el => hideElement(el));
+    // Filter out elements that are already shown by user
+    aiElements = aiElements.filter(el => el.dataset.gscHidden !== 'user-shown');
+
+    aiElements.forEach(el => hideElement(el, 'ai'));
   }
 
   // Forums / Discussions
@@ -326,18 +393,21 @@ function cleanSearch(prefs) {
 // Initialize
 function init() {
   chrome.storage.sync.get(DEFAULT_PREFS, (prefs) => {
-    if (!prefs.isPaid) {
+    currentState = prefs;
+    
+    if (!currentState.isPaid) {
       console.log('[Google Search Cleaner] Payment required to activate filters');
       return;
     }
 
     // Initial clean
-    cleanSearch(prefs);
+    cleanSearch();
 
     // Watch for dynamic content changes (Google loads content via AJAX)
-    const observer = new MutationObserver(() => {
-      cleanSearch(prefs);
-    });
+    // Debounced to prevent performance issues
+    const observer = new MutationObserver(debounce(() => {
+      cleanSearch();
+    }, 100));
 
     observer.observe(document.body, {
       childList: true,
@@ -351,37 +421,36 @@ function init() {
     setInterval(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
-        // Reset hidden states for new search
-        document.querySelectorAll('[data-gsc-hidden="true"]').forEach(el => {
+        // Reset hidden states for new search - removing buttons and resetting flags
+        document.querySelectorAll('.gsc-show-ai-btn').forEach(btn => btn.remove());
+        document.querySelectorAll('[data-gsc-hidden]').forEach(el => {
           el.dataset.gscHidden = 'false';
+          el.style.display = ''; 
         });
+        
         // Multiple delays to catch lazy-loaded content
-        setTimeout(() => cleanSearch(prefs), 100);
-        setTimeout(() => cleanSearch(prefs), 300);
-        setTimeout(() => cleanSearch(prefs), 500);
-        setTimeout(() => cleanSearch(prefs), 1000);
-        setTimeout(() => cleanSearch(prefs), 2000);
-        setTimeout(() => cleanSearch(prefs), 3000);
+        setTimeout(cleanSearch, 100);
+        setTimeout(cleanSearch, 300);
+        setTimeout(cleanSearch, 500);
+        setTimeout(cleanSearch, 1000);
       }
     }, 200);
 
     // Also listen for popstate (back/forward navigation)
     window.addEventListener('popstate', () => {
-      setTimeout(() => cleanSearch(prefs), 100);
+      setTimeout(cleanSearch, 100);
     });
 
     // Aggressive AI Overview check - runs periodically because AI Overview loads very late
-    // Checks current prefs each time so it respects toggle changes
     setInterval(() => {
-      chrome.storage.sync.get({ hideAI: true, isPaid: false }, (currentPrefs) => {
-        if (currentPrefs.isPaid && currentPrefs.hideAI) {
-          const aiContainer = findAIOverviewContainer();
-          if (aiContainer && aiContainer.dataset.gscHidden !== 'true') {
-            hideElement(aiContainer);
-          }
+      if (currentState.isPaid && currentState.hideAI) {
+        // We force a check here
+        const aiContainer = findAIOverviewContainer();
+        if (aiContainer && aiContainer.dataset.gscHidden !== 'true' && aiContainer.dataset.gscHidden !== 'user-shown') {
+          hideElement(aiContainer, 'ai');
         }
-      });
-    }, 500);
+      }
+    }, 1000); 
   });
 }
 
@@ -389,18 +458,21 @@ function init() {
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'sync') {
     chrome.storage.sync.get(DEFAULT_PREFS, (prefs) => {
-      // Reset hidden states
-      document.querySelectorAll('[data-gsc-hidden="true"]').forEach(el => {
+      currentState = prefs; // Update global state
+      
+      // Reset hidden states completely
+      document.querySelectorAll('.gsc-show-ai-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('[data-gsc-hidden]').forEach(el => {
         el.style.display = '';
         el.dataset.gscHidden = 'false';
       });
 
       // Only apply filters if paid
-      if (prefs.isPaid) {
+      if (currentState.isPaid) {
         // Run immediately and with delays to catch AI Overview
-        cleanSearch(prefs);
-        setTimeout(() => cleanSearch(prefs), 100);
-        setTimeout(() => cleanSearch(prefs), 300);
+        cleanSearch();
+        setTimeout(cleanSearch, 100);
+        setTimeout(cleanSearch, 300);
       }
     });
   }
