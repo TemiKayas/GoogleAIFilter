@@ -1,0 +1,125 @@
+ give me a todo and play by play to create my own google extension that removes the AI overview from google searches. I want it to work by 1) The user clicks the extension to configure their settings, and easily filter out other sorts of media as well, ie forum posts, ect. I also want to add a button that says "See what AI said" that shows the text from the AI overview. I want this extension to cost 2 dollars. How do I build this?
+
+Building a Chrome extension to modify the Google Search page requires a mix of CSS injection and JavaScript. Since Google frequently changes its "class names" (the code identifiers for elements like the AI Overview), your extension needs to be robust.
+
+Here is your play-by-play guide to building and monetizing this extension.
+Part 1: The "To-Do" List
+
+    Set up the Manifest: Create the manifest.json to define permissions and scripts.
+
+    Build the Logic (Content Script): Create a script that finds the AI Overview container, hides it, and injects a "See what AI said" button.
+
+    Create the Settings UI (Popup): Build an HTML popup where users can toggle filters for Forums, AI, etc.
+
+    Implement Storage: Use chrome.storage to save user preferences so the AI stays hidden even after a refresh.
+
+    Set up Monetization: Integrate a payment provider like ExtensionPay (recommended for a $2 flat fee).
+
+    Test and Publish: Load the "unpacked" extension in Chrome to test, then submit to the Chrome Web Store.
+
+Part 2: The Play-by-Play (Code)
+1. The Manifest (manifest.json)
+
+This tells Chrome what your extension does. Use Manifest V3.
+JSON
+
+{
+  "manifest_version": 3,
+  "name": "Google Search Cleaner",
+  "version": "1.0",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["*://www.google.com/search*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.google.com/search*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ]
+}
+
+2. The Content Script (content.js)
+
+This script runs directly on the Google search page. It looks for the AI box (usually wrapped in a specific div) and hides it.
+JavaScript
+
+// Function to hide AI and add the toggle button
+function cleanSearch() {
+  chrome.storage.sync.get(['hideAI', 'hideForums'], (prefs) => {
+    // 1. Identify the AI Overview container (ID/Class changes, so we target likely containers)
+    const aiBox = document.querySelector('div[data-asynctype="du_kg"], .kp-blk, [data-attrid="wa:/description"]');
+
+    if (aiBox && prefs.hideAI) {
+      aiBox.style.display = 'none';
+
+      // Create "See what AI said" button
+      if (!document.getElementById('show-ai-btn')) {
+        const btn = document.createElement('button');
+        btn.id = 'show-ai-btn';
+        btn.innerText = 'See what AI said';
+        btn.style = 'margin: 10px; padding: 5px 10px; cursor: pointer;';
+        btn.onclick = () => { aiBox.style.display = 'block'; btn.remove(); };
+        aiBox.parentNode.insertBefore(btn, aiBox);
+      }
+    }
+
+    // 2. Filter Forum Posts (Discussions)
+    if (prefs.hideForums) {
+      const forumBlocks = document.querySelectorAll('div:has(h3:contains("Discussions")), [data-attrid="forum"]');
+      forumBlocks.forEach(el => el.style.display = 'none');
+    }
+  });
+}
+
+// Run on load and whenever the page updates (AJAX)
+const observer = new MutationObserver(cleanSearch);
+observer.observe(document.body, { childList: true, subtree: true });
+cleanSearch();
+
+3. The Settings Popup (popup.html & popup.js)
+
+A simple UI to let users choose what to block.
+HTML
+
+<h3>Search Filters</h3>
+<label><input type="checkbox" id="ai-toggle"> Remove AI Overview</label><br>
+<label><input type="checkbox" id="forum-toggle"> Remove Forums</label>
+<script src="popup.js"></script>
+
+Part 3: How to Charge $2
+
+Google deprecated its own "Chrome Web Store Payments" in 2021. To charge a flat $2 fee in 2026, you should use ExtensionPay or Stripe.
+The Best Strategy: ExtensionPay
+
+ExtensionPay.com is the gold standard for this.
+
+    Sign up and create a "Plan" for $2.00 (one-time).
+
+    Add the Library: Include ExtPay.js in your extension folder.
+
+    Check Payment Status: In your content.js, wrap your logic in a check:
+    JavaScript
+
+    const extpay = ExtPay('your-extension-id');
+    extpay.getUser().then(user => {
+      if (user.paid) {
+        cleanSearch(); // Only run if they've paid
+      } else {
+        extpay.openPaymentPage(); // Prompt for $2
+      }
+    });
+
+Part 4: Publishing
+
+    Developer Dashboard: Go to the Chrome Developer Dashboard.
+
+    Registration Fee: Pay a one-time $5 USD fee to Google to become a developer.
+
+    Upload: Zip your folder (manifest, icons, scripts) and upload it.
+
+    Review: Google will review it (takes 1–3 days) to ensure you aren't stealing data.
+
+Would you like me to write the specific CSS selectors to target the "Forums" and "People Also Ask" sections for your filters?

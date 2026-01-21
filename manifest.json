@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Google Search Cleaner",
+  "description": "Remove AI Overviews, forums, ads, and other clutter from Google Search results",
+  "version": "1.0.0",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["*://www.google.com/*", "*://www.google.co.uk/*", "*://www.google.ca/*", "*://www.google.com.au/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.google.com/search*", "*://www.google.co.uk/search*", "*://www.google.ca/search*", "*://www.google.com.au/search*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://extensionpay.com/*"],
+      "js": ["ExtPay.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
