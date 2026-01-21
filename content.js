@@ -23,11 +23,10 @@ const SELECTORS = {
     'div[jsname="yEVEwb"]',
   ],
 
-  // People Also Ask
+  // People Also Ask - target the whole container
   peopleAlsoAsk: [
-    'div[jsname="Cpkphb"]',
-    '.related-question-pair',
-    'div[data-sgrd="true"]',
+    '[data-sgrd="true"]',
+    '[data-initq]',                    // Data attribute for question blocks
   ],
 
   // Shopping Results
@@ -266,7 +265,23 @@ function cleanSearch(prefs) {
 
   // People Also Ask
   if (prefs.hidePeopleAlsoAsk) {
-    findElements(SELECTORS.peopleAlsoAsk).forEach(el => hideElement(el));
+    // Try direct selectors first
+    findElements(SELECTORS.peopleAlsoAsk).forEach(el => {
+      // Walk up to find container with the heading
+      const container = el.closest('[data-hveid]');
+      if (container) hideElement(container);
+      else hideElement(el);
+    });
+
+    // Also find by heading text (fail-safe)
+    const headings = document.querySelectorAll('h2, h3, div[role="heading"], [aria-level]');
+    for (const heading of headings) {
+      const text = (heading.innerText || heading.textContent || '').trim().toLowerCase();
+      if (text === 'people also ask' || text.startsWith('people also ask')) {
+        const container = heading.closest('[data-hveid]');
+        if (container) hideElement(container);
+      }
+    }
   }
 
   // Shopping
