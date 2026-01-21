@@ -356,14 +356,17 @@ function init() {
     });
 
     // Aggressive AI Overview check - runs periodically because AI Overview loads very late
-    if (prefs.hideAI) {
-      setInterval(() => {
-        const aiContainer = findAIOverviewContainer();
-        if (aiContainer && aiContainer.dataset.gscHidden !== 'true') {
-          hideElement(aiContainer);
+    // Checks current prefs each time so it respects toggle changes
+    setInterval(() => {
+      chrome.storage.sync.get({ hideAI: true, isPaid: false }, (currentPrefs) => {
+        if (currentPrefs.isPaid && currentPrefs.hideAI) {
+          const aiContainer = findAIOverviewContainer();
+          if (aiContainer && aiContainer.dataset.gscHidden !== 'true') {
+            hideElement(aiContainer);
+          }
         }
-      }, 500);
-    }
+      });
+    }, 500);
   });
 }
 
@@ -379,7 +382,10 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
       // Only apply filters if paid
       if (prefs.isPaid) {
+        // Run immediately and with delays to catch AI Overview
         cleanSearch(prefs);
+        setTimeout(() => cleanSearch(prefs), 100);
+        setTimeout(() => cleanSearch(prefs), 300);
       }
     });
   }
